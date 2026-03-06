@@ -22,6 +22,17 @@
   - `intention/intentions_enum.py` 枚举定义了所有可能的意图，并包含辅助函数（如 `from_str`）。  
   - 低置信度情况下会自动触发澄清节点或 LLM 回退。
 
+### Agent工作流程图
+
+![Agent工作流](docs/images/agent-workflow.png)
+
+上图展示了完整的一轮对话流程：
+1. **intent_recognition** 分析用户输入并路由到相应处理节点
+2. **process_order**、**search_menu**、**confirm_price** 等节点处理特定意图
+3. **handle_clarification** 管理低置信度情况
+4. 所有路径汇聚在 **generate_response** 生成最终回复
+5. 生成回复后工作流结束
+
 ## 📁 关键组件
 
 | 模块/文件夹 | 目的 |
@@ -47,7 +58,7 @@
 
 ## 🧠 AI 中心特性
 
-- **混合意图处理** – 向量检索加 LLM 恢复。  
+- **混合意图处理** – 向量检索加 LLM 兜底。  
 - **RAG 风格菜单查找** – 对模糊菜名进行语义相似度检索。  
 - **上下文感知 LLM 对话** 使用 `SimpleLLM`（保存有限历史）。  
 - **低置信度自动提问澄清**。

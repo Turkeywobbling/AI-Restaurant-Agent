@@ -24,6 +24,17 @@ An experimental “AI restaurant agent” that combines vector‑based intent re
   - The `intention/intentions_enum.py` enum defines all possible intents and includes utilities (e.g. `from_str`).  
   - Low‑confidence cases automatically trigger a clarification node or an LLM fallback.
 
+### Agent Workflow Diagram
+
+![Agent Workflow](docs/images/agent-workflow.png)
+
+The graph above illustrates a complete single round of conversation dialogue flow:
+1. **intent_recognition** analyzes user input and routes to appropriate handlers
+2. Nodes like **process_order**, **search_menu**, **confirm_price**, etc. handle specific intents
+3. **handle_clarification** manages low-confidence cases
+4. All paths converge at **generate_response** to produce the final reply
+5. The workflow ends after response generation
+
 ## 📁 Key Components
 
 | Module/Folder | Purpose |
