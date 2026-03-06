@@ -2,13 +2,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
 # use updated HuggingFacePipeline from langchain-huggingface
 # see deprecation warning in notebook
-try:
-    from langchain_huggingface import HuggingFacePipeline
-except ImportError:
-    # fallback to deprecated import with warning suppression
-    import warnings
-    warnings.filterwarnings("ignore", category=DeprecationWarning, module="langchain_community.llms")
-    from langchain_community.llms import HuggingFacePipeline
+from langchain_community.llms import HuggingFacePipeline
 from typing import List, Dict, Optional
 
 class SimpleLLM:
@@ -65,7 +59,7 @@ class SimpleLLM:
         # 记录默认生成设置，后续调用 chat() 时会传给 llm.invoke
         self.generation_kwargs = {
             "max_new_tokens": 256,
-            "temperature": 0.7,
+            "temperature": 0.5,
             "do_sample": True,
         }
 
@@ -131,6 +125,21 @@ class SimpleLLM:
         
         return response
     
+    def chat_without_context(self, user_input: str) -> str:
+        """不带上下文的对话（直接使用用户输入作为提示）"""
+        messages = [{"role": "user", "content": user_input}]
+        prompt = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+
+        response = self.llm.invoke(prompt, **self.generation_kwargs)
+        
+        response = self._clean_response(response)
+
+        return response
+    
     def _clean_response(self, response: str) -> str:
         """清理回复中的特殊标记"""
         markers = ["<|im_start|>", "<|im_end|>", "<|endoftext|>"]
@@ -152,14 +161,15 @@ class SimpleLLM:
         prompt = "你是餐厅的ai线上点外卖助手，请帮忙识别用户所说话的意图， 可能的意图有：" 
         prompt += "greeting（打招呼）, order（点菜）, search（问菜）, modify_order（修改订单）, query_order（查询订单）, confirm_price（确认价格）, confirm_address（确认地址）, place_order（下单）, farewell（告别）, help（帮助）， complaint（投诉）。"
         
-        prompt += "请直接返回意图名称(英文)，不要其他任何文本。如果你也不确定，请返回unknown。用户输入是: " 
+
+        prompt += "请直接返回意图名称(英文)，不要其他任何文本。如果你也不确定，请返回unknown。 " 
         
         if context:
-            prompt += "上下文信息: " + str(context) + "。"
-
-        prompt += user_input
+            prompt += "你与用户的对话信息: " + str(context) + "。"
+        else:
+            prompt += "用户输入是: " + user_input
 
         print(f"LLM分析意图的提示词:\n{prompt}\n")
 
-        res = self.llm.invoke(prompt)
-        return res.strip()
+        res = self.chat_without_context(prompt)
+        return res

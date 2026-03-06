@@ -16,7 +16,6 @@ import order
 import stage_enum
 import intention.intentions_enum as intentions_enum
 
-# todo 统一阶段（意图）名称！！！！
 # todo 需要知道上一节点是什么，比如点了一个菜后，是结账还是继续点？
 
 class AgentState(TypedDict, total=False):
@@ -151,7 +150,7 @@ class RestaurantAgent:
     # ============ 节点实现 ============
 
     def llm_intent_recognition(self, user_input: str) -> str:
-        return self.llm.analyze_intent(user_input)
+        return intentions_enum.Intentions.from_str(self.llm.analyze_intent(user_input, str(self.conversation_history)))
     
     def intent_recognition_node(self, state: AgentState) -> AgentState: # todo!! 增加升降级，IntentRecognizer准确度低的时候，改用llm分析意图
         """意图识别节点 - 使用向量识别器"""
@@ -168,19 +167,11 @@ class RestaurantAgent:
         if self.is_llm_analyze_intent: # 升降级
             print("⚠️ 当前使用LLM分析意图")
             intent_result = self.llm_intent_recognition(user_input)
-            print(f"LLM分析意图原始结果: {intent_result}")
-            if intent_result != "unknown":
-                if intent_result in intentions_enum.Intentions.__members__:
-                    intent_result = intentions_enum.Intentions[intent_result]
+            print(f"  ✅ LLM识别意图: {intent_result}")
+            state["intent"] = intent_result
+            state["requires_clarification"] = False
+            return state
 
-                print(f"  ✅ LLM识别意图: {intent_result}")
-                state["intent"] = intent_result
-                state["requires_clarification"] = False
-                return state
-            else:
-                print(f"  ❌ LLM也无法识别意图，保持需要澄清的状态")
-                state["requires_clarification"] = True
-                return state
         else:
             # 向量意图识别
             intent_result = self.intent_recognizer.recognize(user_input, context)
@@ -477,7 +468,7 @@ class RestaurantAgent:
             if intent == intentions_enum.Intentions.SEARCH and state.get("search_results"):
                 return self._build_search_results(state)
             else:
-                return "请问您想吃点什么？可以直接跟我说哦！"
+                return self._build_ordering(state)
         
         # 1. 价格确认阶段
         if stage == stage_enum.stage.CONFIRMING_PRICE:
@@ -514,6 +505,22 @@ class RestaurantAgent:
         # 9. 默认
         else:
             return "我是AI线上外卖客服，可以帮您点餐、查询菜单、处理订单。请问有什么需要？"
+        
+    def _build_ordering(self, state: AgentState) -> str:
+        """构建点餐阶段的回复"""
+        # 先检查当前订单状态，如果已经有菜品了，先和用户确认订单，然后继续走流程
+        # 如果没有菜品，引导用户点餐
+        target = ""
+
+        order_obj = state.get("current_order")
+        if order_obj and len(order_obj.order_data["items"]) > 0:
+            prompt = "这是用户当前订单：" + str(order_obj.order_data) + "请帮我询问用户是想确认订单还是继续点餐？"
+            prompt += "同时，这是用户刚刚说的话：" + state["user_input"] + "你的回答如何连贯，适配用户刚刚说的话"
+            target = self.llm.chat(prompt)
+        else:
+            target = "请问您想吃点什么？可以直接跟我说哦！或者需要我来介绍菜单的话也行哦~"
+
+        return target
     
     def _build_price_confirmation(self, state: AgentState) -> str:
         """构建价格确认回复"""
@@ -783,4 +790,4 @@ class RestaurantAgent:
                 print(f"\n❌ 发生错误: {e}")
                 #print("请重试或输入'帮助'查看使用说明")
 
-                # traceback.print_exc()
+                traceback.print_exc()

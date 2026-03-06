@@ -17,3 +17,30 @@ class Intentions(Enum):
     HELP = "help"
     COMPLAINT = "complaint"
     UNKNOWN = "unknown" # 未知意图
+
+    @staticmethod
+    def from_str(s: str) -> 'Intentions':
+        """
+        将字符串转换为 Intentions 枚举值
+        
+        Args:
+            s: 输入字符串，可以是枚举的值（如 "greeting"）或名称（如 "GREETING"）
+        
+        Returns:
+            对应的 Intentions 枚举值，如果找不到则返回 UNKNOWN
+        """
+        if not s:
+            return Intentions.UNKNOWN
+            
+        # 首先尝试按值匹配
+        for member in Intentions:
+            if member.value == s.lower():
+                return member
+        
+        # 然后尝试按名称匹配（大小写不敏感）
+        for member in Intentions:
+            if member.name.lower() == s.lower():
+                return member
+        
+        # 如果都找不到，返回 UNKNOWN
+        return Intentions.UNKNOWN
