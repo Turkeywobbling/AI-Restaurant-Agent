@@ -1,8 +1,10 @@
 # AI Food Order Agent 🍜
 
+[中文版本](README.zh.md) | [English version](README.md)
+
 An experimental “AI restaurant agent” that combines vector‑based intent recognition, LangGraph workflow orchestration, and RAG‑style retrieval to drive an automated food‑ordering conversation.
 
-## 🧩 High‑level Architecture
+## 🧩 Architecture
 
 - **LangGraph‑driven state machine**  
   The conversation is modelled as a `StateGraph` (see `order_agent.py`).  
