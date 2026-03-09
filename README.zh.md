@@ -1,4 +1,4 @@
-# AI 餐厅点餐代理 🍜
+# AI 餐厅点餐Agent 🍜
 
 一个实验性的“AI 餐厅代理”，结合了向量意图识别、LangGraph 工作流管理以及 RAG 风格检索，用于驱动自动化的点餐对话。
 
@@ -8,7 +8,7 @@
   对话建模为 `StateGraph`（参见 `order_agent.py`）。  
   每个节点表示一个逻辑步骤（意图识别、菜单搜索、订单处理、价格/地址确认、生成回复等），边根据意图或对话阶段进行路由。
 
-- **AI 代理 / LLM 集成**  
+- **AI Agent / LLM 集成**  
   - `llm_chater.SimpleLLM` 封装了 HuggingFace 的因果模型管道，提供上下文感知聊天、意图分析和临时提取辅助。  
   - 当向量意图识别器不确定时，代理可以升级为使用 LLM（见 `llm_intent_recognition()` 和 `intent_recognition_node`）。
 

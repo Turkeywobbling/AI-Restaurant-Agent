@@ -5,6 +5,8 @@ from typing import Dict, List, Optional, Set
 import os
 import json
 
+from log import log_utils
+
 class NLPEntityExtractor:
     """使用 NLP 的实体提取器"""
     
@@ -31,14 +33,14 @@ class NLPEntityExtractor:
         self.order_verbs = {'点', '要', '来', '叫', '买', '吃', '下单'}
         self.quantifiers = {'份', '个', '盘', '碗', '碗', '碟'}
         
-        print(f"📚 NLP实体提取器初始化完成")
-        print(f"   📊 菜品数量: {len(self.dish_names)}")
-        print(f"   📝 分词词典已更新")
+        log_utils.d(f"📚 NLP实体提取器初始化完成")
+        log_utils.d(f"   📊 菜品数量: {len(self.dish_names)}")
+        log_utils.d(f"   📝 分词词典已更新")
 
     def _load_menu(self) -> List[Dict]:
         """加载菜单数据"""
         if not os.path.exists(self.data_path):
-            print(f"  ⚠️ 菜单文件不存在，创建示例菜单...")
+            log_utils.d(f"  ⚠️ 菜单文件不存在，创建示例菜单...")
         
         with open(self.data_path, 'r', encoding='utf-8') as f:
             menu = json.load(f)
@@ -77,12 +79,12 @@ class NLPEntityExtractor:
         Returns:
             提取到的菜品名，如果没有返回 None
         """
-        print(f"\n🔍 NLP提取从: '{text}'")
+        log_utils.d(f"\n🔍 NLP提取从: '{text}'")
         
         # 1. 先检查是否直接包含完整菜品名
         for dish_name in sorted(self.dish_names, key=len, reverse=True):
             if dish_name in text:
-                print(f"   ✅ 直接匹配: {dish_name}")
+                log_utils.d(f"   ✅ 直接匹配: {dish_name}")
                 return dish_name
         
         # 2. 使用 jieba 分词 + 词性标注
@@ -90,7 +92,7 @@ class NLPEntityExtractor:
         
         candidates = []
         for word, flag in words:
-            print(f"   词: {word} ({flag})")
+            log_utils.d(f"   词: {word} ({flag})")
             
             # 名词、动名词、专有名词 可能是菜品
             if flag.startswith('n') or flag in ['vn', 'an']:
@@ -105,20 +107,20 @@ class NLPEntityExtractor:
         for candidate in candidates:
             # 精确匹配
             if candidate in self.dish_name_set:
-                print(f"   ✅ 分词匹配: {candidate}")
+                log_utils.d(f"   ✅ 分词匹配: {candidate}")
                 return candidate
             
             # 模糊匹配：检查是否是菜品名的子串
             for dish_name in self.dish_names:
                 if candidate in dish_name and len(candidate) >= 2:
-                    print(f"   ✅ 子串匹配: {candidate} -> {dish_name}")
+                    log_utils.d(f"   ✅ 子串匹配: {candidate} -> {dish_name}")
                     return dish_name
         
         # 4. 提取所有可能的中文词组
         words = re.findall(r'[\u4e00-\u9fa5]{2,}', text)
         for word in words:
             if word in self.dish_name_set:
-                print(f"   ✅ 关键词匹配: {word}")
+                log_utils.d(f"   ✅ 关键词匹配: {word}")
                 return word
         
         return None
@@ -142,7 +144,7 @@ class NLPEntityExtractor:
             for i in range(len(text) - n + 1):
                 candidate = text[i:i+n]
                 if candidate in self.dish_name_set:
-                    print(f"   ✅ N-gram匹配 ({n}字): {candidate}")
+                    log_utils.d(f"   ✅ N-gram匹配 ({n}字): {candidate}")
                     return candidate
         
         return None

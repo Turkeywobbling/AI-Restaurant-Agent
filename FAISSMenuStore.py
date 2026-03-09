@@ -13,6 +13,8 @@ import re
 import time
 import torch
 
+from log import log_utils
+
 os.environ['HF_HUB_OFFLINE'] = '1'  # 完全离线模式
 
 class FAISSMenuStore:
@@ -26,7 +28,7 @@ class FAISSMenuStore:
             data_path: 菜单JSON路径
             embedding_dim: 向量维度（all-MiniLM-L6-v2是384维）
         """
-        print("\n🔧 初始化FAISS向量存储...")
+        log_utils.d("\n🔧 初始化FAISS向量存储...")
         
         self.data_path = data_path
         self.embedding_dim = embedding_dim
@@ -34,9 +36,9 @@ class FAISSMenuStore:
         self.metadata_path = "./data/faiss_metadata.pkl"
         
         # 1. 初始化embedding模型
-        print("  加载embedding模型...")
+        log_utils.d("  加载embedding模型...")
         self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
-        print(f"  ✅ 模型加载完成，维度: {self.embedder.get_sentence_embedding_dimension()}")
+        log_utils.d(f"  ✅ 模型加载完成，维度: {self.embedder.get_sentence_embedding_dimension()}")
         
         # 2. 初始化或加载FAISS索引
         self._init_index()
@@ -45,35 +47,35 @@ class FAISSMenuStore:
         self.menu_items = self._load_menu()
         self.id_to_item = {item['id']: item for item in self.menu_items}
         
-        print(f"  📊 共加载 {len(self.menu_items)} 个菜品")
+        log_utils.d(f"  📊 共加载 {len(self.menu_items)} 个菜品")
 
         # 开始菜品转向量
-        print('开始菜品转向量')
+        log_utils.d('开始菜品转向量')
         self.build_index()
     
     def _init_index(self):
         """初始化FAISS索引"""
         if os.path.exists(self.index_path):
             # 加载已有索引
-            print("  加载已有FAISS索引...")
+            log_utils.d("  加载已有FAISS索引...")
             self.index = faiss.read_index(self.index_path)
             with open(self.metadata_path, 'rb') as f:
                 self.id_to_index, self.index_to_id = pickle.load(f)
-            print(f"  ✅ 加载完成，索引大小: {self.index.ntotal}")
+            log_utils.d(f"  ✅ 加载完成，索引大小: {self.index.ntotal}")
         else:
             # 创建新索引
-            print("  创建新FAISS索引...")
+            log_utils.d("  创建新FAISS索引...")
             # 使用L2距离的索引
             self.index = faiss.IndexFlatL2(self.embedding_dim)
             self.id_to_index = {}  # 菜品ID到索引位置的映射
             self.index_to_id = []  # 索引位置到菜品ID的映射
-            print("  ✅ 新索引创建完成")
+            log_utils.d("  ✅ 新索引创建完成")
             return
     
     def _load_menu(self) -> List[Dict]:
         """加载菜单数据"""
         if not os.path.exists(self.data_path):
-            print(f"  ⚠️ 菜单文件不存在，创建示例菜单...")
+            log_utils.d(f"  ⚠️ 菜单文件不存在，创建示例菜单...")
         
         with open(self.data_path, 'r', encoding='utf-8') as f:
             menu = json.load(f)
@@ -93,10 +95,10 @@ class FAISSMenuStore:
     
     def build_index(self):
         """构建FAISS索引"""
-        print("\n🔨 构建FAISS索引...")
+        log_utils.d("\n🔨 构建FAISS索引...")
         
         if self.index.ntotal > 0:
-            print(f"  索引已存在，大小: {self.index.ntotal}")
+            log_utils.d(f"  索引已存在，大小: {self.index.ntotal}")
             return
         
         # 为每个菜品生成向量
@@ -123,8 +125,8 @@ class FAISSMenuStore:
         with open(self.metadata_path, 'wb') as f:
             pickle.dump((self.id_to_index, self.index_to_id), f)
         
-        print(f"  ✅ 索引构建完成，共 {self.index.ntotal} 个向量")
-        print(f"  💾 索引已保存到 {self.index_path}")
+        log_utils.d(f"  ✅ 索引构建完成，共 {self.index.ntotal} 个向量")
+        log_utils.d(f"  💾 索引已保存到 {self.index_path}")
     
     def search(self, query: str, k: int = 5) -> List[Dict]:
         """

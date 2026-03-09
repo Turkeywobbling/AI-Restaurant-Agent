@@ -13,6 +13,7 @@ import re
 import time
 import torch
 
+from log import log_utils
 
 class HybridRerankStore:
     """混合重排序 - 规则 + 模型"""
@@ -31,11 +32,11 @@ class HybridRerankStore:
                 device='cuda' if torch.cuda.is_available() else 'cpu'
             )
             self.use_model = True
-            print("rerank模型加载完成")
+            log_utils.d("rerank模型加载完成")
         except Exception as e:
-            print(f"❌ 加载rerank模型失败: {e}")
+            log_utils.d(f"❌ 加载rerank模型失败: {e}")
             self.use_model = False
-            print("使用规则重排序")
+            log_utils.d("使用规则重排序")
     
     def _rule_score(self, dish: dict, query: str) -> float:
         """规则分数"""
