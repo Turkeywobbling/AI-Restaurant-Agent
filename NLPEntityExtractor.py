@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Set
 import os
 import json
 
-from log import log_utils
+from log.log_utils import log_utils
 
 class NLPEntityExtractor:
     """使用 NLP 的实体提取器"""

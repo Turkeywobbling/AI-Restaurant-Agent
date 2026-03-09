@@ -11,7 +11,9 @@ import json
 from typing import Optional, List, Dict
 import re
 
-from log import log_utils
+from log.log_utils import log_utils
+
+# 需要把生成回复和分析意图的函数分开，避免上下文混用导致的意图分析不准确问题。
 
 class SimpleLLM:
     """带上下文的 LLM 对话类（修正版）"""

@@ -13,7 +13,7 @@ import re
 import time
 import torch
 
-from log import log_utils
+from log.log_utils import log_utils
 
 class HybridRerankStore:
     """混合重排序 - 规则 + 模型"""

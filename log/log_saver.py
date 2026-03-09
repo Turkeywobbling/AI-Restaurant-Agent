@@ -4,11 +4,21 @@ import os
 from venv import logger
 
 class log_saver:
-    def __init__(self, log_file: str = "log_output.log", log_level: int = logging.DEBUG，on_Note_book: bool = False):
+    _instance = None
+
+    def __init__(self, log_file: str = "log_output.log", log_level: int = logging.DEBUG, on_Note_book: bool = False):
+        self.is_init = False
         self.inititalize_logger(log_file, log_level, on_Note_book)
 
-    def inititalize_logger(self, log_file: str = "log_output.log", log_level: int = logging.DEBUG，on_Note_book: bool = False):    
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def inititalize_logger(self, log_file: str = "log_output.log", log_level: int = logging.DEBUG, on_Note_book: bool = False):    
         if self.is_init:
+            print("logutils已被初始化过了")
             return  # 已经初始化过了
         
         self.logger = logging.getLogger()

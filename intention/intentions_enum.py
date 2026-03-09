@@ -4,8 +4,8 @@ from enum import Enum
 
 class Intentions(Enum):
     GREETING = "greeting"
-    ORDER = "order"
-    SEARCH = "search"
+    SEARCH = "search_menu" # 查询菜品
+    PROCESS_ORDER = "process_order" # 處理訂單
     QUERY_ORDER = "query_order" # 查询订单状态
     MODIFY_ORDER = "modify_order" # 修改订单
     CONFIRM_ORDER = "confirm_order" # 确认订单

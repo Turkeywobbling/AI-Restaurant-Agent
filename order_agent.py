@@ -16,7 +16,7 @@ import order
 import stage_enum
 import intention.intentions_enum as intentions_enum
 
-from log import log_utils
+from log.log_utils import log_utils
 
 # todo 需要知道上一节点是什么，比如点了一个菜后，是结账还是继续点？
 
@@ -152,7 +152,7 @@ class RestaurantAgent:
     # ============ 节点实现 ============
 
     def llm_intent_recognition(self, user_input: str) -> str:
-        return intentions_enum.Intentions.from_str(self.llm.analyze_intent(user_input, str(self.conversation_history)))
+        return intentions_enum.Intentions.from_str(self.intent_recognizer.llm_analyze_intent(user_input))
     
     def intent_recognition_node(self, state: AgentState) -> AgentState: # todo!! 增加升降级，IntentRecognizer准确度低的时候，改用llm分析意图
         """意图识别节点 - 使用向量识别器"""
@@ -252,6 +252,7 @@ class RestaurantAgent:
 
     def process_order_node(self, state: AgentState) -> AgentState:
         """处理订单节点"""
+        log_utils.d("进入order_node")
         
         intent = state["intent"]
         user_input = state["user_input"]
@@ -260,7 +261,7 @@ class RestaurantAgent:
         if state.get("current_order") is None:
             state["current_order"] = order.order_manager(id=1)
         
-        if intent == intentions_enum.Intentions.ORDER:
+        if intent == intentions_enum.Intentions.SEARCH:
             # 先用entityExtracter找菜名
             selected_dish = self.entity_extractor.extract(user_input)
             
@@ -436,7 +437,8 @@ class RestaurantAgent:
     def place_order_node(self, state: AgentState) -> AgentState:
         """下单节点"""
         # 暂时以print的方式显示，后期mcp接口对接后可以改成调用接口的方式
-        return state["current_order"].get_order_summary()
+        print(state["current_order"].get_order_summary())
+        return state
 
     def generate_response_node(self, state: AgentState) -> AgentState:
         """生成回复节点"""
@@ -446,11 +448,13 @@ class RestaurantAgent:
         if state.get("clarification_question"):
             response = state["clarification_question"]
             log_utils.d(f"使用澄清问题: {response}")
+            print(response)
         else:
             # 根据当前阶段生成回复
             log_utils.d(f"根据阶段 '{state.get('stage')}' 和意图 '{state.get('intent')}' 生成回复")
             response = self._generate_stage_response(state)
             log_utils.d(f"生成的回复: {response}")
+            print(response)
         
         state["response"] = response
         state["messages"] = state.get("messages", []) + [
@@ -470,7 +474,16 @@ class RestaurantAgent:
             if intent == intentions_enum.Intentions.SEARCH and state.get("search_results"):
                 return self._build_search_results(state)
             else:
-                return self._build_ordering(state)
+                user_input = state["user_input"]
+                # 檢查裏面是否有菜品 
+                selected_dish = self.entity_extractor.extract(user_input)
+                if len(selected_dish) > 0 and selected_dish["dish"]:
+                    log_utils.d(selected_dish)
+                    log_utils.i("檢測到用戶說的話裏有菜品，跳轉處理菜品節點")
+                    state["intent"] = intentions_enum.Intentions.SEARCH
+                    return self.process_order_node(state)
+                else:
+                    return self._build_ordering(state)
         
         # 1. 价格确认阶段
         if stage == stage_enum.stage.CONFIRMING_PRICE:
@@ -508,19 +521,19 @@ class RestaurantAgent:
         else:
             return "我是AI线上外卖客服，可以帮您点餐、查询菜单、处理订单。请问有什么需要？"
         
-    def _build_ordering(self, state: AgentState) -> str:
-        """构建点餐阶段的回复"""
+    def _build_ordering(self, state: AgentState):
+        """点餐阶段，非查找菜单意图，其他种类"""
         # 先检查当前订单状态，如果已经有菜品了，先和用户确认订单，然后继续走流程
         # 如果没有菜品，引导用户点餐
         target = ""
 
         order_obj = state.get("current_order")
-        if order_obj and len(order_obj.order_data["items"]) > 0:
+        if order_obj and len(order_obj.order_data["items"]) > 0: # 當前是否有訂單
             prompt = "这是用户当前订单：" + str(order_obj.order_data) + "请帮我询问用户是想确认订单还是继续点餐？"
             prompt += "同时，这是用户刚刚说的话：" + state["user_input"] + "你的回答如何连贯，适配用户刚刚说的话"
             target = self.llm.chat(prompt)
-        else:
-            target = "请问您想吃点什么？可以直接跟我说哦！或者需要我来介绍菜单的话也行哦~"
+        else: # 當前無訂單，看看是否有下單指令
+            target = "我可以幫你點餐，有什麽需要？"
 
         return target
     
@@ -639,7 +652,7 @@ class RestaurantAgent:
         intent = state["intent"]
         intent_to_node = {
             intentions_enum.Intentions.SEARCH.value: "search_menu",           # ✅ 改为 "search_menu"
-            intentions_enum.Intentions.ORDER.value: "process_order",          # ✅ 改为 "process_order"
+            intentions_enum.Intentions.PROCESS_ORDER.value: "process_order",          # ✅ 改为 "process_order"
             intentions_enum.Intentions.MODIFY_ORDER.value: "process_order",   # ✅ 改为 "process_order"
             intentions_enum.Intentions.QUERY_ORDER.value: "process_order",    # ✅ 改为 "process_order"
             intentions_enum.Intentions.CONFIRM_PRICE.value: "confirm_price",
@@ -726,7 +739,7 @@ class RestaurantAgent:
         
         # 显示初始问候
         initial_greeting = "您好！欢迎致电美味餐厅，我是AI客服小美。请问今天想吃什么？"
-        log_utils.d(f"\n🤖 客服: {initial_greeting}")
+        print(f"\n🤖 客服: {initial_greeting}")
         
         # 记录初始对话
         self.conversation_history.append({

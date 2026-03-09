@@ -13,7 +13,7 @@ import re
 import time
 import torch
 
-from log import log_utils
+from log.log_utils import log_utils
 
 os.environ['HF_HUB_OFFLINE'] = '1'  # 完全离线模式
 

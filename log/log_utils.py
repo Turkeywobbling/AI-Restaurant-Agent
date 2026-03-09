@@ -5,18 +5,18 @@ import sys
 import os
 from venv import logger
 
-from log.logger import log_saver
+from log.log_saver import log_saver
 
 class log_utils:
 
     @staticmethod
     def d(message: str):
-        log_saver().log_debug(message)    
+        log_saver.get_instance().log_debug(message)    
 
     @staticmethod
     def i(message: str):
-        log_saver().log_info(message)
+        log_saver.get_instance().log_info(message)
 
     @staticmethod
     def e(message: str):
-        log_saver().log_error(message)        
+        log_saver.get_instance().log_error(message)        

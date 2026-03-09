@@ -3,6 +3,7 @@
 使用 sentence-transformers 计算用户输入与意图示例的相似度
 """
 
+from log.log_utils import log_utils
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from typing import Dict, List, Optional, Tuple
@@ -21,7 +22,7 @@ class IntentRecognizer:
     4. 如果低于阈值，触发澄清对话
     """
     
-    def __init__(self, model_name: str = 'all-MiniLM-L6-v2', threshold: float = 0.8):
+    def __init__(self, model_name: str = 'all-MiniLM-L6-v2', threshold: float = 0.8, is_llm_analyze_intent: bool = False):
         """
         初始化意图识别器
         
@@ -29,7 +30,23 @@ class IntentRecognizer:
             model_name: 使用的embedding模型
             threshold: 置信度阈值，低于此值需要澄清
         """
-        print("🔄 初始化向量意图识别器...")
+
+        # 是否llm识别意图
+        if is_llm_analyze_intent:
+            # 需要初始化一个专门意图识别的llm连接器
+            import llm.online_llm_connector 
+            self.llm_connector = llm.online_llm_connector.OnlineLLMConnector()
+            # 默认调api方式，用户需要设置环境变量 INCEPTION_API_KEY 来使用
+            api_key = os.getenv('INCEPTION_API_KEY')
+            if api_key is None:
+                log_utils.e("⚠️ 环境变量 INCEPTION_API_KEY 未设置，改用本地部署llm")
+                self.llm_connector = llm.online_llm_connector.LocalLLMDeployer()
+            else:    
+                self.llm_connector.set_api_key(os.getenv('INCEPTION_API_KEY'))
+            log_utils.d("✅ 使用LLM进行意图识别")
+            return
+
+        log_utils.d("🔄 初始化向量意图识别器...")
         
         # 加载embedding模型
         self.model = SentenceTransformer(model_name)
@@ -48,20 +65,6 @@ class IntentRecognizer:
                 "晚上好",
                 "上午好",
                 "下午好"
-            ],
-            intentions_enum.Intentions.ORDER: [
-                "我想点外卖",
-                "点外卖",
-                "我要点餐",
-                "来份麻婆豆腐",
-                "点一个宫保鸡丁",
-                "我想要水煮肉片",
-                "来一份红烧肉",
-                "点菜",
-                "我要吃鱼香肉丝",
-                "来个西红柿炒鸡蛋",
-                "给我来份酸菜鱼",
-                "点一个蒜蓉西兰花"
             ],
             intentions_enum.Intentions.SEARCH: [
                 "有什么好吃的",
@@ -224,6 +227,19 @@ class IntentRecognizer:
             }
         
         print(f"  预计算 {len(self.intent_vectors)} 个意图的向量")
+
+    def llm_analyze_intent(self, user_input: str) -> str:
+        llm_response = self.llm_connector.analyze_intent(user_input)
+        log_utils.d(f"LLM分析意图结果:\n{llm_response}\n")
+        # 解析JSON响应
+        try:
+            result = json.loads(llm_response.strip())
+            intention = result.get("intention", "unknown").lower()
+            return intention
+        except (json.JSONDecodeError, KeyError):
+            # 解析失败，返回unknown
+            return "unknown"
+
     
     def recognize(self, text: str, context: Optional[Dict] = None) -> Dict:
         """
@@ -236,6 +252,7 @@ class IntentRecognizer:
         Returns:
             包含意图和置信度的字典
         """
+
         # 生成用户输入的向量
         user_vector = self.model.encode(text)
         
