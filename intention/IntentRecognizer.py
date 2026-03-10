@@ -82,6 +82,22 @@ class IntentRecognizer:
                 "你们店做什么的",
                 "你们店菜品种类"
             ],
+            intentions_enum.Intentions.PROCESS_ORDER: [
+                "来份宫保鸡丁",
+                "我要麻婆豆腐",
+                "点一份水煮肉片",
+                "加个酸菜鱼",
+                "再来个鱼香肉丝",
+                "点菜",
+                "我要这个",
+                "来一份",
+                "加一份",
+                "点个菜",
+                "来个菜",
+                "我要吃",
+                "想吃这个",
+                "来一份这个"
+            ],
             intentions_enum.Intentions.QUERY_ORDER: [
                 "看看我点了什么",
                 "我的订单",
@@ -374,7 +390,7 @@ class IntentRecognizer:
         
         # 根据备选意图生成澄清问题
         intent_questions = {
-            intentions_enum.Intentions.ORDER.value: "您是想点餐吗？",
+            intentions_enum.Intentions.PROCESS_ORDER.value: "您是想点餐吗？",
             intentions_enum.Intentions.SEARCH.value: "您是想查询菜单吗？",
             intentions_enum.Intentions.QUERY_ORDER.value: "您是想查看订单吗？",
             intentions_enum.Intentions.MODIFY_ORDER.value: "您是想修改订单吗？",

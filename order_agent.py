@@ -50,6 +50,10 @@ class AgentState(TypedDict, total=False):
     requires_clarification: bool  # 是否需要澄清
     clarification_question: Optional[str]  # 澄清问题
     
+    # 阶段处理标志（防止重复处理）
+    _confirm_price_processed: bool  # 价格确认阶段是否已处理
+    _confirm_address_processed: bool  # 地址确认阶段是否已处理
+    
     # 最终回复
     response: str
 
@@ -89,16 +93,16 @@ class RestaurantAgent:
         # 包装节点函数以添加追踪
         def trace_node(node_func):
             def wrapped(state):
-                log_utils.d(f"\n🔷 进入节点: {node_func.__name__}")
-                log_utils.d(f"  当前意图: {state.get('intent')}, 阶段: {state.get('stage')}")
+                log_utils.i(f"🔷 进入节点: {node_func.__name__}")
+                log_utils.i(f"  当前意图: {state.get('intent')}, 阶段: {state.get('stage')}")
                 try:
                     result = node_func(state)
-                    log_utils.d(f"  ✅ 退出节点: {node_func.__name__}")
+                    log_utils.i(f"  ✅ 退出节点: {node_func.__name__}")
                     if result.get('response'):
-                        log_utils.d(f"  响应: {result['response'][:50]}...")
+                        log_utils.i(f"  响应: {result['response'][:50]}...")
                     return result
                 except Exception as e:
-                    log_utils.d(f"  ❌ 节点异常: {e}")
+                    log_utils.i(f"  ❌ 节点异常: {e}")
                     raise
             return wrapped
         
@@ -167,12 +171,17 @@ class RestaurantAgent:
         }
         
         if self.is_llm_analyze_intent: # 升降级
-            log_utils.d("⚠️ 当前使用LLM分析意图")
+            log_utils.i("⚠️ 当前使用LLM分析意图")
             intent_result = self.llm_intent_recognition(user_input)
-            log_utils.d(f"  ✅ LLM识别意图: {intent_result}")
+            log_utils.i(f"  ✅ LLM识别意图: {intent_result}")
+
+            if intent_result == intentions_enum.Intentions.UNKNOWN:
+                state["requires_clarification"] = True
+            else:
+                state["requires_clarification"] = False
+
             state["intent"] = intent_result
-            state["requires_clarification"] = False
-            return state
+            
 
         else:
             # 向量意图识别
@@ -185,25 +194,25 @@ class RestaurantAgent:
             state["requires_clarification"] = intent_result["needs_clarification"]
             
             # 打印调试信息
-            log_utils.d("用户输入： " + user_input)
-            log_utils.d(f"\n意图识别:")
-            log_utils.d(f"  意图: {intent_result['intent']} (置信度: {intent_result['confidence']:.1%})")
+            log_utils.i("用户输入： " + user_input)
+            log_utils.i(f"\n意图识别:")
+            log_utils.i(f"  意图: {intent_result['intent']} (置信度: {intent_result['confidence']:.1%})")
             
             if intent_result['needs_clarification']:
-                log_utils.d("置信度低，使用大模型分析意图")
+                log_utils.i("置信度低，使用大模型分析意图")
                 llm_intent_recognition_result = self.llm_intent_recognition(user_input)
 
                 if llm_intent_recognition_result != "unknown":
-                    log_utils.d(f"  ✅ LLM识别意图: {llm_intent_recognition_result}")
+                    log_utils.i(f"  ✅ LLM识别意图: {llm_intent_recognition_result}")
                     state["intent"] = llm_intent_recognition_result
                     state["requires_clarification"] = False
                 
                 else:
-                    log_utils.d(f"  ❌ LLM也无法识别意图，保持需要澄清的状态")
+                    log_utils.i(f"  ❌ LLM也无法识别意图，保持需要澄清的状态")
                     state["requires_clarification"] = True
             
-            log_utils.d("intent_recognition_node, 准备进入下一节点: " + self.route_by_intent(state))
-            return state
+        log_utils.i("intent_recognition_node, 准备进入下一节点: " + self.route_by_intent(state))
+        return state
     
     def handle_clarification_node(self, state: AgentState) -> AgentState:
         """处理需要澄清的情况"""
@@ -228,7 +237,7 @@ class RestaurantAgent:
         results = self.vector_store.search(user_input, k=5)
         state["search_results"] = results
         
-        log_utils.d(f"🔍 找到 {len(results)} 个相关菜品")
+        log_utils.i(f"🔍 找到 {len(results)} 个相关菜品")
         
         return state
     
@@ -242,8 +251,8 @@ class RestaurantAgent:
 
     def vectorDB_search_dish(self, dish_name, threshold=0.7) -> str:
         results = self.vector_store.search(dish_name)
-        log_utils.d("菜品向量搜索: ")
-        log_utils.d(results)
+        log_utils.i("菜品向量搜索: ")
+        log_utils.i(results)
         matched_dish = results[0]
         if matched_dish['similarity'] < threshold:
             return ""
@@ -252,7 +261,7 @@ class RestaurantAgent:
 
     def process_order_node(self, state: AgentState) -> AgentState:
         """处理订单节点"""
-        log_utils.d("进入order_node")
+        log_utils.i("进入order_node")
         
         intent = state["intent"]
         user_input = state["user_input"]
@@ -261,7 +270,8 @@ class RestaurantAgent:
         if state.get("current_order") is None:
             state["current_order"] = order.order_manager(id=1)
         
-        if intent == intentions_enum.Intentions.SEARCH:
+        if intent == intentions_enum.Intentions.PROCESS_ORDER:
+            # 处理点餐意图
             # 先用entityExtracter找菜名
             selected_dish = self.entity_extractor.extract(user_input)
             
@@ -276,9 +286,9 @@ class RestaurantAgent:
                 raw_order_data = {}
                 try:
                     raw_order_data = eval(llm_res)
-                    log_utils.d(f"📦 LLM提取结果: {raw_order_data}")
+                    log_utils.i(f"📦 LLM提取结果: {raw_order_data}")
                 except Exception as e:
-                    log_utils.d(f"{e}: " + llm_res)
+                    log_utils.i(f"{e}: " + llm_res)
                 
                 if raw_order_data and len(raw_order_data) > 0:
                     # 处理LLM提取的结果
@@ -291,6 +301,7 @@ class RestaurantAgent:
                     return state
             else:
                 # entityExtracter直接找到了
+                log_utils.i("entityExtracter直接找到了")
                 dish_name = selected_dish.get('dish')
                 quantity = selected_dish.get('quantity', 1)
                 self._add_dish_to_order(state, dish_name, quantity)
@@ -305,7 +316,7 @@ class RestaurantAgent:
                     price = self.menu.get_price(dish_name)
                     state["current_order"].remove_item(dish_name, price)
                     self._update_order_total(state)
-                    log_utils.d(f"❌ 从订单移除: {dish_name}")
+                    log_utils.i(f"❌ 从订单移除: {dish_name}")
         
         elif intent == intentions_enum.Intentions.QUERY_ORDER:
             # 查询订单 - 不需要修改，只是返回当前状态
@@ -315,8 +326,10 @@ class RestaurantAgent:
         self._update_order_total(state)
         
         # 根据订单状态更新阶段
-        if state.get("current_order") and len(state["current_order"].order_data["items"]) > 0 and state.get("order_stage") == "ordering":
-            state["order_stage"] = "confirm_address"
+        if state.get("current_order") and len(state["current_order"].order_data["items"]) > 0:
+            # 如果成功添加了菜品，需要进入确认价格阶段
+            if state.get("stage") == stage_enum.stage.ORDERING:
+                state["stage"] = stage_enum.stage.CONFIRMING_PRICE
         
         # 打印当前订单状态
         self._print_order_status(state)
@@ -340,7 +353,7 @@ class RestaurantAgent:
                 dish_info = searched_dish
             else:
                 # 3. 完全找不到
-                log_utils.d(f"⚠️ 未找到菜品: {dish_name}")
+                log_utils.i(f"⚠️ 未找到菜品: {dish_name}")
                 state["needs_clarification"] = True
                 state["clarification_question"] = f"抱歉，我们没有找到'{dish_name}'，您看看其他菜品？"
                 return
@@ -352,7 +365,7 @@ class RestaurantAgent:
 
         
         state["current_order"] = current_items
-        log_utils.d(f"✅ 添加新菜品: {dish_name}")
+        log_utils.i(f"✅ 添加新菜品: {dish_name}")
 
     def _search_dish_in_db(self, dish_name: str) -> dict:
         """在向量数据库中搜索菜品"""
@@ -365,7 +378,7 @@ class RestaurantAgent:
                     'description': results[0].get('description', '')
                 }
         except Exception as e:
-            log_utils.d(f"搜索菜品失败: {e}")
+            log_utils.i(f"搜索菜品失败: {e}")
         
         return None 
 
@@ -377,12 +390,12 @@ class RestaurantAgent:
     def _print_order_status(self, state: AgentState):
         """打印订单状态"""
         if state.get("current_order") and len(state["current_order"].order_data["items"]) > 0:
-            log_utils.d("\n📋 当前订单:")
+            log_utils.i("📋 当前订单:")
             for item_name, quantity in state["current_order"].order_data["items"].items():
                 price = self.menu.get_price(item_name)
                 subtotal = price * quantity
-                log_utils.d(f"  {item_name} x{quantity} = {subtotal}元")
-            log_utils.d(f"💰 总计: {state.get('order_total', 0)}元")   
+                log_utils.i(f"  {item_name} x{quantity} = {subtotal}元")
+            log_utils.i(f"💰 总计: {state.get('order_total', 0)}元")   
 
     def llm_classify_intent(self, user_input: str) -> intentions_enum.Intentions:
         """使用LLM辅助意图分类"""
@@ -421,7 +434,7 @@ class RestaurantAgent:
         # 先用llm对话的方式来获得用户地址
         # 后续可以将用户信息进行存储，常配送地直接读取
         res = self.agent_response("收到，请问您的配送地址是？")
-        log_utils.d(res) # 暂时交互用
+        log_utils.i(res) # 暂时交互用
 
         location = input("请输入地址: ").strip() # 这里直接用input模拟用户输入地址，后续可以改成对话交互
         llm_extracted_location = self.llm.chat("请从用户输入中提取配送地址，用户输入是: " + location + "。如果能提取到地址，请直接返回地址文本，如果无法提取，请返回空字符串。")
@@ -429,7 +442,7 @@ class RestaurantAgent:
             current_order = state["current_order"]
             current_order.set_delivery_location(llm_extracted_location)
         else:
-            log_utils.d("⚠️ 无法提取地址，请重新输入。")
+            log_utils.i("⚠️ 无法提取地址，请重新输入。")
             state["requires_clarification"] = True
             state["clarification_question"] = "抱歉，我没能理解您的地址。请提供更详细的配送地址（街道、小区、门牌号）。"
             return state    
@@ -442,18 +455,30 @@ class RestaurantAgent:
 
     def generate_response_node(self, state: AgentState) -> AgentState:
         """生成回复节点"""
-        log_utils.d("\n✅ 进入 generate_response_node")
+        log_utils.i("✅ 进入 generate_response_node")
         
         # 如果已经有澄清问题，直接使用
         if state.get("clarification_question"):
             response = state["clarification_question"]
-            log_utils.d(f"使用澄清问题: {response}")
+            log_utils.i(f"使用澄清问题: {response}")
             print(response)
         else:
-            # 根据当前阶段生成回复
-            log_utils.d(f"根据阶段 '{state.get('stage')}' 和意图 '{state.get('intent')}' 生成回复")
-            response = self._generate_stage_response(state)
-            log_utils.d(f"生成的回复: {response}")
+            # 检查 stage 是否已变化，如果已变化到需要特定处理的阶段，先处理它
+            stage = state.get("stage", stage_enum.stage.ORDERING)
+            if stage == stage_enum.stage.CONFIRMING_PRICE and not state.get("_confirm_price_processed"):
+                # 进入确认价格阶段，需要生成价格确认回复
+                state["_confirm_price_processed"] = True
+                response = self._build_price_confirmation(state)
+            elif stage == stage_enum.stage.CONFIRMING_ADDRESS and not state.get("_confirm_address_processed"):
+                # 进入确认地址阶段
+                state["_confirm_address_processed"] = True
+                response = self._build_address_request(state)
+            else:
+                # 根据当前阶段生成回复
+                log_utils.i(f"根据阶段 '{state.get('stage')}' 和意图 '{state.get('intent')}' 生成回复")
+                response = self._generate_stage_response(state)
+            
+            log_utils.i(f"生成的回复: {response}")
             print(response)
         
         state["response"] = response
@@ -469,7 +494,11 @@ class RestaurantAgent:
         stage = state.get("stage", stage_enum.stage.ORDERING)
         intent = state["intent"]
 
-        # 下单阶段
+        # 优先处理搜索意图（可以在任何阶段查询菜单）
+        if intent == intentions_enum.Intentions.SEARCH and state.get("search_results"):
+            return self._build_search_results(state)
+        
+        # 根据阶段生成回复
         if stage == stage_enum.stage.ORDERING:
             if intent == intentions_enum.Intentions.SEARCH and state.get("search_results"):
                 return self._build_search_results(state)
@@ -484,7 +513,6 @@ class RestaurantAgent:
                     return self.process_order_node(state)
                 else:
                     return self._build_ordering(state)
-        
         # 1. 价格确认阶段
         if stage == stage_enum.stage.CONFIRMING_PRICE:
             return self._build_price_confirmation(state)
@@ -500,10 +528,6 @@ class RestaurantAgent:
         # 4. 已完成
         elif stage == stage_enum.stage.COMPLETED:
             return "订单已确认！预计30-40分钟送达。感谢您的来电！"
-        
-        # 5. 搜索结果
-        elif intent == intentions_enum.Intentions.SEARCH and state.get("search_results"):
-            return self._build_search_results(state)
         
         # 6. 问候
         elif intent == intentions_enum.Intentions.GREETING:
@@ -570,7 +594,7 @@ class RestaurantAgent:
         order_obj = state.get("current_order")
         
         if not order_obj:
-            log_utils.d( "订单不存在。")
+            log_utils.i( "订单不存在。")
             # 开始创建订单流程
             
             return "订单不存在。"
@@ -625,7 +649,7 @@ class RestaurantAgent:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(order, f, ensure_ascii=False, indent=2)
         
-        log_utils.d(f"💾 订单已保存: {filename}")
+        log_utils.i(f"💾 订单已保存: {filename}")
     
     def route_by_intent(self, state: AgentState) -> str:
         """根据意图路由"""
@@ -633,7 +657,7 @@ class RestaurantAgent:
         # 如果需要澄清，优先处理
         if state.get("requires_clarification"):
             result = "handle_clarification"
-            log_utils.d(f"  ➜ 返回: {result}")
+            log_utils.i(f"  ➜ 返回: {result}")
             return result
         
         # 如果当前有明确的阶段，优先处理
@@ -645,7 +669,7 @@ class RestaurantAgent:
         }
         if stage in stage_to_node:
             result = stage_to_node[stage]
-            log_utils.d(f"  ➜ 返回 (阶段匹配): {result}")
+            log_utils.i(f"  ➜ 返回 (阶段匹配): {result}")
             return result
         
         # 根据意图路由
@@ -664,7 +688,7 @@ class RestaurantAgent:
         }
         
         result = intent_to_node.get(intent.value, "generate_response")
-        log_utils.d(f"  ➜ 返回 (意图匹配): {result}")
+        log_utils.i(f"  ➜ 返回 (意图匹配): {result}")
         return result
     
     # ============ 主接口 ============
@@ -684,8 +708,8 @@ class RestaurantAgent:
             "rewritten_query": "",
             "search_results": [],
             "selected_dish": None,
-            "current_order": None,  # 使用 None 而不是 []
-            "order_total": 0.0,
+            "current_order": self.order_manager,  # 使用实例变量而不是None
+            "order_total": self.order_manager.order_data["total_price"] if self.order_manager else 0.0,
             "order_confirmed": False,
             "customer_info": {
                 "name": None,
@@ -695,13 +719,16 @@ class RestaurantAgent:
             "stage": stage_enum.stage.ORDERING,
             "requires_clarification": False,
             "clarification_question": None,
-            "response": ""
+            "response": "",
+            # 阶段处理标志（防止重复处理）
+            "_confirm_price_processed": False,
+            "_confirm_address_processed": False
         }
         
         # 运行图
-        log_utils.d("graph.invoke1")
+        log_utils.i("graph.invoke1")
         final_state = self.graph.invoke(initial_state)
-        log_utils.d("graph.invoke")
+        log_utils.i("graph.invoke")
 
         return final_state["response"]
     
@@ -719,7 +746,7 @@ class RestaurantAgent:
             • 帮助： "帮助"、"help"、"?"
             • 退出： "退出"、"quit"、"exit"
             """
-        log_utils.d(help_text)
+        log_utils.i(help_text)
 
     def save_conversation(self):
         """保存对话历史"""
@@ -729,9 +756,9 @@ class RestaurantAgent:
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(self.conversation_history, f, ensure_ascii=False, indent=2)
-            log_utils.d(f"💾 对话已保存: {filename}")
+            log_utils.i(f"💾 对话已保存: {filename}")
         except Exception as e:
-            log_utils.d(f"⚠️ 保存对话失败: {e}")    
+            log_utils.i(f"⚠️ 保存对话失败: {e}")    
     
     def run(self):
         """主循环 - 在这里持续对话"""
@@ -766,7 +793,7 @@ class RestaurantAgent:
                 
                 # 检查退出命令
                 if user_input.lower() in ["退出", "quit", "exit", "q"]:
-                    log_utils.d("\n🤖 客服: 感谢您的光临，再见！")
+                    log_utils.i("\n🤖 客服: 感谢您的光临，再见！")
                     self.conversation_history.append({
                         "role": "assistant",
                         "content": "感谢您的光临，再见！",
@@ -782,7 +809,7 @@ class RestaurantAgent:
                 
                 # 核心处理：调用 Agent 处理用户输入
                 response = self.process(user_input)
-                log_utils.d(response)
+                log_utils.i(response)
                 
                 # 记录助手回复
                 self.conversation_history.append({
@@ -796,13 +823,13 @@ class RestaurantAgent:
                     self.save_conversation()
                 
             except KeyboardInterrupt:
-                log_utils.d("\n\n👋 检测到中断，正在保存对话...")
+                log_utils.i("\n\n👋 检测到中断，正在保存对话...")
                 self.save_conversation()
-                log_utils.d("感谢使用，再见！")
+                log_utils.i("感谢使用，再见！")
                 break
                 
             except Exception as e:
-                log_utils.d(f"\n❌ 发生错误: {e}")
-                #log_utils.d("请重试或输入'帮助'查看使用说明")
+                log_utils.i(f"\n❌ 发生错误: {e}")
+                #log_utils.i("请重试或输入'帮助'查看使用说明")
 
                 traceback.print_exc()
